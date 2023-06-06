@@ -1,4 +1,4 @@
-package hive
+package game
 
 type Position struct {
 	X int

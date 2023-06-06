@@ -70,7 +70,7 @@ func main() {
 	renderer.Clear()                          // Fill the entire screen with gray color
 
 	drawHexagonAndBee(renderer, 0, 0)
-	drawHexagonAndBee(renderer, 1, 1)
+	drawHexagonAndBee(renderer, 0, 2)
 
 	renderer.Present()
 	sdl.Delay(5000) // Wait for 5 seconds to view the result
