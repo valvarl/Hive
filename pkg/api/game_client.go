@@ -1,117 +1,151 @@
 package api
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"hive/pkg/game"
-	"io"
-	"net/http"
+	"net"
 
 	"go.uber.org/zap"
 )
 
 type GameClient struct {
-	log      *zap.Logger
+	ID       game.ID
+	logger   *zap.Logger
 	endpoint string
-	client   *http.Client
+	conn     net.Conn
+	cs       ClientServise
 }
 
-func NewBuildClient(l *zap.Logger, endpoint string) *GameClient {
+func NewGameClient(logger *zap.Logger, endpoint string, cs ClientServise) *GameClient {
 	return &GameClient{
-		log:      l,
+		logger:   logger,
 		endpoint: endpoint,
-		client:   &http.Client{},
+		cs:       cs,
 	}
 }
 
-func (c *GameClient) StartGame(ctx context.Context, request *GameRequest) (*GameStarted, StatusReader, error) {
-	c.log.Info("Starting a new game", zap.Any("request", request))
-
-	body, err := json.Marshal(request)
+func (c *GameClient) Connect() error {
+	conn, err := net.Dial("tcp", c.endpoint)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to marshal request: %w", err)
+		return err
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/start", c.endpoint), bytes.NewReader(body))
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create request: %w", err)
+	c.conn = conn
+	if err = c.Handshake(); err != nil {
+		return err
 	}
-
-	res, err := c.client.Do(req)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to send request: %w", err)
-	}
-
-	if res.StatusCode != http.StatusOK {
-		defer res.Body.Close()
-		errorMessage := res.Header.Get("X-Error-Message")
-		return nil, nil, fmt.Errorf("unexpected status code: %d, message: %s", res.StatusCode, errorMessage)
-	}
-
-	decoder := json.NewDecoder(res.Body)
-
-	var buildStarted GameStarted
-	if err := decoder.Decode(&buildStarted); err != nil {
-		defer res.Body.Close()
-		return nil, nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return &buildStarted, &statusReader{decoder, res.Body, res.Header}, nil
+	return nil
 }
 
-func (c *GameClient) SignalGame(ctx context.Context, gameID game.ID, signal *SignalRequest) (*SignalResponse, error) {
-	c.log.Info("Sending signal to the game", zap.String("gameID", gameID.String()))
-
-	body, err := json.Marshal(signal)
+func (c *GameClient) Close() error {
+	err := c.conn.Close()
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal signal: %w", err)
+		return err
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/signal?game_id=%s", c.endpoint, gameID), bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	res, err := c.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode != http.StatusOK {
-		errorMessage := res.Header.Get("X-Error-Message")
-		return nil, fmt.Errorf("unexpected status code: %d, message: %s", res.StatusCode, errorMessage)
-	}
-
-	var signalResponse SignalResponse
-	if err := json.NewDecoder(res.Body).Decode(&signalResponse); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return &signalResponse, nil
+	return nil
 }
 
-type statusReader struct {
-	decoder *json.Decoder
-	body    io.ReadCloser
-	headers http.Header
-}
-
-func (r *statusReader) Close() error {
-	return r.body.Close()
-}
-
-func (r *statusReader) Next() (*StatusUpdate, error) {
-	var update StatusUpdate
-	if err := r.decoder.Decode(&update); err != nil {
-		if errors.Is(err, io.EOF) {
-			return nil, io.EOF
+func (c *GameClient) HandleUpdates(ctx context.Context) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+			statusUpdate, err := c.ReceiveStatusUpdate()
+			if err != nil {
+				return err
+			}
+			err = c.cs.HandleStatusUpdate(ctx, statusUpdate)
+			if err != nil {
+				return err
+			}
 		}
-		return nil, fmt.Errorf("failed to decode status update: %w", err)
+	}
+}
+
+func (c *GameClient) Handshake() error {
+	data, err := json.Marshal(c.ID)
+	if err != nil {
+		return err
 	}
 
-	return &update, nil
+	_, err = c.conn.Write(data)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
+
+func (c *GameClient) SendMove(move PlayMove) error {
+	moveData, err := json.Marshal(move)
+	if err != nil {
+		return err
+	}
+
+	_, err = c.conn.Write(moveData)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *GameClient) ReceiveStatusUpdate() (*StatusUpdate, error) {
+	buffer := make([]byte, 1024)
+	n, err := c.conn.Read(buffer)
+	if err != nil {
+		return nil, err
+	}
+
+	var su StatusUpdate
+	err = json.Unmarshal(buffer[:n], &su)
+	if err != nil {
+		return nil, err
+	}
+
+	return &su, nil
+}
+
+// func main() {
+// 	logger, err := zap.NewProduction()
+// 	if err != nil {
+// 		log.Fatal("Ошибка при инициализации логгера:", err)
+// 	}
+
+// 	// Создание экземпляра игрока
+// 	player, err := NewPlayerClient(logger, "localhost:8080")
+// 	if err != nil {
+// 		logger.Fatal("Ошибка при создании игрока:", zap.Error(err))
+// 	}
+
+// 	// Подключение к игре
+// 	err = player.Connect()
+// 	if err != nil {
+// 		logger.Fatal("Ошибка при подключении к игре:", zap.Error(err))
+// 	}
+
+// 	// Запуск горутины для приема обновлений от сервера
+// 	go player.ReceiveUpdates()
+
+// 	// Пример отправки хода на сервер
+// 	move := Move{
+// 		Piece: &game.Piece{
+// 			// Задайте поля вашего хода здесь
+// 		},
+// 		Position: &game.Position{
+// 			// Задайте поля вашего хода здесь
+// 		},
+// 	}
+
+// 	err = player.PlayMove(move)
+// 	if err != nil {
+// 		logger.Error("Ошибка при отправке хода:", zap.Error(err))
+// 	}
+
+// 	// Задержка для получения обновлений от сервера
+// 	time.Sleep(5 * time.Second)
+
+// 	// Завершение программы
+// 	logger.Sync()
+// }

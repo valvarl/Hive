@@ -32,3 +32,8 @@ type Piece struct {
 type Board struct {
 	Pieces []Piece
 }
+
+type Move struct {
+	Piece    *Piece
+	Position *Position
+}

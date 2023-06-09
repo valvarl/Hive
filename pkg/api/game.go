@@ -5,39 +5,43 @@ import (
 	"hive/pkg/game"
 )
 
-type GameRequest struct {
-	// Graph build.Graph
+type Hanshake struct {
+	PlayerID game.ID
 }
 
-type GameStarted struct {
-	ID game.ID
-	// MissingFiles []build.ID
+type PlayMove struct {
+	GameID game.ID
+	Move   *game.Move
 }
 
 type StatusUpdate struct {
-	// JobFinished   *JobResult
-	// BuildFailed   *BuildFailed
-	// BuildFinished *BuildFinished
+	GameID       game.ID
+	GameState    *GameState
+	GameFailed   *GameFailed
+	GameFinished *GameFinished
 }
 
-type SignalRequest struct {
-	// UploadDone *UploadDone
+type GameFailed struct {
+	Error string
 }
 
-type SignalResponse struct {
+type GameFinished struct {
+	Winer bool
+	Tie   bool
 }
 
-type StatusWriter interface {
-	Started(rsp *GameStarted) error
-	Updated(update *StatusUpdate) error
+type GameState struct {
+	Board        *game.Board
+	Hand         *game.Hand
+	OpponentHand *game.Hand
 }
 
-type Service interface {
-	StartGame(ctx context.Context, request *GameRequest, w StatusWriter) error
-	SignalGame(ctx context.Context, buildID game.ID, signal *SignalRequest) (*SignalResponse, error)
+type ClientServise interface {
+	HandleStatusUpdate(ctx context.Context, statusUpdate *StatusUpdate) error
 }
 
-type StatusReader interface {
-	Close() error
-	Next() (*StatusUpdate, error)
+type ServerServise interface {
+	CreateNewGame(first, second *Player) *Game
+	StartGame(ctx context.Context, game *Game) error
+	UpdateGameState(move *game.Move) StatusUpdate
 }
