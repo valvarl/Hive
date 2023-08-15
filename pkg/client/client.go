@@ -17,7 +17,7 @@ type Client struct {
 }
 
 type Engine interface {
-	MakeMove(board *game.Board, hand, opponentHand *game.Hand) *game.Move
+	MakeMove(ctx context.Context, board *game.Board, hand, opponentHand *game.Hand) *game.Move
 }
 
 func NewClient(l *zap.Logger, apiEndpoint string, engine Engine) *Client {
@@ -51,12 +51,12 @@ func (c *Client) Start(ctx context.Context) {
 
 func (c *Client) HandleStatusUpdate(ctx context.Context, su *api.StatusUpdate) error {
 	engineResponse := make(chan *game.Move)
+	ctx, _ = context.WithTimeout(ctx, 30*time.Second)
 	go func() {
-		engineResponse <- c.engine.MakeMove(su.GameState.Board, su.GameState.Hand, su.GameState.OpponentHand)
+		engineResponse <- c.engine.MakeMove(ctx, su.GameState.Board, su.GameState.Hand, su.GameState.OpponentHand)
 	}()
 	select {
 	case <-ctx.Done():
-	case <-time.After(time.Second * 30):
 	case move := <-engineResponse:
 		err := c.api.SendMove(api.PlayMove{GameID: su.GameID, Move: move})
 		if err != nil {
