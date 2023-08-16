@@ -43,5 +43,5 @@ type ClientServise interface {
 type ServerServise interface {
 	CreateNewGame(first, second *Player) *Game
 	StartGame(ctx context.Context, game *Game) error
-	UpdateGameState(move *game.Move) StatusUpdate
+	UpdateGameState(move *game.Move) *StatusUpdate
 }

@@ -4,14 +4,19 @@ import (
 	"context"
 	"errors"
 	"hive/pkg/client"
+	"hive/pkg/engine"
+	"hive/pkg/server"
 	"io/ioutil"
 	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
+	"gitlab.com/slon/shad-go/tools/testtool"
+	"go.uber.org/goleak"
 	"go.uber.org/zap"
 )
 
@@ -22,6 +27,7 @@ type env struct {
 	Ctx context.Context
 
 	Clients []*client.Client
+	Server  *server.Server
 }
 
 const (
@@ -75,20 +81,44 @@ func newEnv(t *testing.T, config *Config) (e *env, cancel func()) {
 	t.Helper()
 	t.Logf("test is running inside %s; see test.log file for more info", filepath.Join("workdir", t.Name()))
 
-	// port, err := testtool.GetFreePort()
+	port, err := testtool.GetFreePort()
 	require.NoError(t, err)
-	// addr := "127.0.0.1:" + port
-	// serverEndpoint := "http://" + addr + "/server"
+	serverEndpoint := "127.0.0.1:" + port
 
-	// var cancelRootContext func()
-	// env.Ctx, cancelRootContext = context.WithCancel(context.Background())
+	var cancelRootContext func()
+	env.Ctx, cancelRootContext = context.WithCancel(context.Background())
 
-	// env.Client = client.NewClient(
-	// 	env.Logger.Named("client"),
-	// 	serverEndpoint,
-	// 	filepath.Join(absCWD, "testdata", t.Name()))
+	env.Server = server.NewServer(env.Logger.Named("server"), serverEndpoint)
+	env.Server.Start(env.Ctx)
 
-	return nil, nil
+	env.Clients = []*client.Client{
+		client.NewClient(
+			env.Logger.Named("client"),
+			serverEndpoint,
+			engine.MakeUserEngine(env.Logger.Named("engine"), "client"),
+		),
+		client.NewClient(
+			env.Logger.Named("client"),
+			serverEndpoint,
+			engine.MakeUserEngine(env.Logger.Named("engine"), "client"),
+		),
+	}
+
+	go func() {
+		select {
+		case <-time.After(time.Second * 10):
+			panic("test hang")
+		case <-env.Ctx.Done():
+			return
+		}
+	}()
+
+	return env, func() {
+		cancelRootContext()
+		_ = env.Logger.Sync()
+
+		goleak.VerifyNone(t)
+	}
 }
 
 func newWinFileSink(u *url.URL) (zap.Sink, error) {

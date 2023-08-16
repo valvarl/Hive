@@ -15,6 +15,18 @@ type Server struct {
 	api *api.GameServer
 }
 
+func NewServer(l *zap.Logger, endpoint string) *Server {
+	server := &Server{
+		log: l,
+	}
+	server.api = api.NewGameServer(l, endpoint, server)
+	return server
+}
+
+func (s *Server) Start(ctx context.Context) {
+	s.api.Start(ctx)
+}
+
 func (s *Server) CreateNewGame(first, second *api.Player) *api.Game {
 	if rand.Float32() < 0.5 {
 		first, second = second, first

@@ -17,5 +17,6 @@ require (
 	github.com/stretchr/testify v1.8.4
 	gitlab.com/slon/shad-go v0.0.0-20230521151325-c3874bfe536c
 	go.uber.org/atomic v1.7.0 // indirect
+	go.uber.org/goleak v1.2.1
 	go.uber.org/multierr v1.6.0 // indirect
 )

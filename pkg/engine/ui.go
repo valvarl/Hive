@@ -30,7 +30,11 @@ type UserEngine struct {
 }
 
 func MakeUserEngine(logger *zap.Logger, title string) *UserEngine {
-	return &UserEngine{log: logger, init: false, title: title}
+	return &UserEngine{
+		log:   logger,
+		init:  false,
+		title: title,
+	}
 }
 
 func (ue *UserEngine) Init() {

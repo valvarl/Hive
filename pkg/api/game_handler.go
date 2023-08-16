@@ -68,13 +68,14 @@ func (p *Player) RemoveGame(ID game.ID) {
 	delete(p.gameID, ID)
 }
 
-func NewGameServer(logger *zap.Logger, endpoint string) (*GameServer, error) {
+func NewGameServer(logger *zap.Logger, endpoint string, ss ServerServise) *GameServer {
 	return &GameServer{
 		log:      logger,
 		endpoint: endpoint,
 		games:    make(map[game.ID]*Game),
 		players:  make(map[game.ID]*Player),
-	}, nil
+		ss:       ss,
+	}
 }
 
 func (s *GameServer) Start(ctx context.Context) error {
@@ -85,65 +86,65 @@ func (s *GameServer) Start(ctx context.Context) error {
 
 	s.log.Info("Сервер запущен. Ожидание подключений...")
 
-	var waitingPlayer *Player
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
-			if s.GetActiveGameCount() >= 20 {
-				continue
-			}
+	go func() error {
+		var waitingPlayer *Player
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			default:
+				if s.GetActiveGameCount() >= 20 {
+					continue
+				}
 
-			conn, err := listener.Accept()
-			if err != nil {
-				s.log.Error("Ошибка при принятии подключения:", zap.Error(err))
-				continue
-			}
-			hs, err := s.Handshake(conn)
-			if err != nil {
-				s.log.Error("Ошибка аунтификации:", zap.Error(err))
-				continue
-			}
+				conn, err := listener.Accept()
+				if err != nil {
+					s.log.Error("Ошибка при принятии подключения:", zap.Error(err))
+					continue
+				}
+				hs, err := s.Handshake(conn)
+				if err != nil {
+					s.log.Error("Ошибка аунтификации:", zap.Error(err))
+					continue
+				}
 
-			var player *Player
-			{
-				s.playerMu.Lock()
-				defer s.playerMu.Unlock()
-
+				var player *Player
 				var ok bool
+				s.playerMu.Lock()
 				player, ok = s.players[hs.PlayerID]
 				if !ok {
 					player = &Player{ID: hs.PlayerID, conn: conn, gameID: make(map[game.ID]*Game)}
 					s.players[player.ID] = player
 				}
-			}
+				s.playerMu.Unlock()
 
-			if waitingPlayer == nil {
-				waitingPlayer = player
-				continue
-			} else if waitingPlayer.ID == player.ID {
-				continue
-			}
-
-			game := s.ss.CreateNewGame(waitingPlayer, player)
-			waitingPlayer.AddGame(game)
-			player.AddGame(game)
-			s.AddGame(game)
-			s.wg.Add(1)
-			go func(fp, sp *Player) {
-				if err = s.ss.StartGame(ctx, game); err != nil {
-					s.log.Error("Ошибка игровой сессии", zap.Error(err))
+				if waitingPlayer == nil {
+					waitingPlayer = player
+					continue
+				} else if waitingPlayer.ID == player.ID {
+					continue
 				}
-				fp.RemoveGame(game.ID)
-				sp.RemoveGame(game.ID)
-				s.RemoveGame(game.ID)
-			}(waitingPlayer, player)
 
-			s.log.Info("Игра началась. Игроки:", zap.Any("first", waitingPlayer.ID), zap.Any("second", player.ID))
-			waitingPlayer = nil
+				game := s.ss.CreateNewGame(waitingPlayer, player)
+				waitingPlayer.AddGame(game)
+				player.AddGame(game)
+				s.AddGame(game)
+				s.wg.Add(1)
+				go func(fp, sp *Player) {
+					if err = s.ss.StartGame(ctx, game); err != nil {
+						s.log.Error("Ошибка игровой сессии", zap.Error(err))
+					}
+					fp.RemoveGame(game.ID)
+					sp.RemoveGame(game.ID)
+					s.RemoveGame(game.ID)
+				}(waitingPlayer, player)
+
+				s.log.Info("Игра началась. Игроки:", zap.Any("first", waitingPlayer.ID), zap.Any("second", player.ID))
+				waitingPlayer = nil
+			}
 		}
-	}
+	}()
+	return nil
 }
 
 func (s *GameServer) Handshake(conn net.Conn) (*Hanshake, error) {
@@ -157,7 +158,6 @@ func (s *GameServer) Handshake(conn net.Conn) (*Hanshake, error) {
 	if err = json.Unmarshal(buffer[:n], &handshake); err != nil {
 		return nil, err
 	}
-
 	return &handshake, nil
 }
 
@@ -201,23 +201,3 @@ func (s *GameServer) SendStatusUpdate(player *Player, su *StatusUpdate) error {
 
 	return nil
 }
-
-// func main() {
-// 	logger, err := zap.NewProduction()
-// 	if err != nil {
-// 		log.Fatal("Ошибка при инициализации логгера:", err)
-// 	}
-
-// 	server, err := NewGameServer(logger, "localhost:8080")
-// 	if err != nil {
-// 		logger.Fatal("Ошибка при создании сервера:", zap.Error(err))
-// 	}
-
-// 	ctx, _ := context.WithCancel(context.Background())
-// 	err = server.Start(ctx)
-// 	if err != nil {
-// 		logger.Fatal("Ошибка при запуске сервера:", zap.Error(err))
-// 	}
-
-// 	logger.Sync()
-// }

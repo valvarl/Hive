@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"hive/pkg/game"
 	"net"
+	"time"
 
 	"go.uber.org/zap"
 )
@@ -19,6 +20,7 @@ type GameClient struct {
 
 func NewGameClient(logger *zap.Logger, endpoint string, cs ClientServise) *GameClient {
 	return &GameClient{
+		ID:       game.NewID(),
 		logger:   logger,
 		endpoint: endpoint,
 		cs:       cs,
@@ -64,16 +66,15 @@ func (c *GameClient) HandleUpdates(ctx context.Context) error {
 }
 
 func (c *GameClient) Handshake() error {
-	data, err := json.Marshal(c.ID)
+	handshake := Hanshake{PlayerID: c.ID}
+	data, err := json.Marshal(handshake)
 	if err != nil {
 		return err
 	}
-
 	_, err = c.conn.Write(data)
 	if err != nil {
 		return err
 	}
-
 	return nil
 }
 
@@ -93,6 +94,7 @@ func (c *GameClient) SendMove(move PlayMove) error {
 
 func (c *GameClient) ReceiveStatusUpdate() (*StatusUpdate, error) {
 	buffer := make([]byte, 1024)
+	<-time.After(time.Second)
 	n, err := c.conn.Read(buffer)
 	if err != nil {
 		return nil, err

@@ -34,17 +34,20 @@ func (c *Client) Start(ctx context.Context) {
 	err := c.api.Connect()
 	if err != nil {
 		c.log.Error("Ошибка присоединения к игре", zap.Error(err))
+		return
 	}
-	c.log.Info("Успешное присоединение к игре")
+	c.log.Info("Успешное присоединение к игре", zap.String("ID", c.api.ID.String()))
 
 	err = c.api.HandleUpdates(ctx)
 	if err != nil {
 		c.log.Error("Ошибка игровой сессии", zap.Error(err))
+		return
 	}
 
 	err = c.api.Close()
 	if err != nil {
 		c.log.Error("Ошибка завершения подключения", zap.Error(err))
+		return
 	}
 	c.log.Info("Успешное завершение игры")
 }
