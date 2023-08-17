@@ -17,10 +17,18 @@ const (
 	beeImagePath           = "assets/bee.png"
 )
 
+var (
+	startShiftX       = 0.0
+	startShiftY       = 0.0
+	shiftX            = 0.0
+	shiftY            = 0.0
+	selectedHandPiece = -1
+)
+
 func drawHexagonAndBee(renderer *sdl.Renderer, x, y int) {
 	_hexRadius := hexRadius * boardResizeCoefficient
-	centerX := windowWidth/2 + float64(x-y)*_hexRadius*1.5
-	centerY := windowHeight/2 + float64(x+y)*_hexRadius*math.Sqrt(3)/2
+	centerX := windowWidth/2 + float64(x-y)*_hexRadius*1.5 + shiftX
+	centerY := windowHeight/2 + float64(x+y)*_hexRadius*math.Sqrt(3)/2 + shiftY
 
 	// Draw hexagon
 	var vx, vy []int16
@@ -59,7 +67,8 @@ func drawHexagonAndBee(renderer *sdl.Renderer, x, y int) {
 	renderer.Copy(beeTexture, nil, &dst)
 }
 
-func DrawHand(renderer *sdl.Renderer, handSize int) {
+func DrawHand(renderer *sdl.Renderer, handSize int, mouseX, mouseY int, isClicking bool) (selectedPiece int) {
+	selectedPiece = -1
 	_hexRadius := hexRadius * handResizeCoefficient
 
 	// Calculate the total width of the hand
@@ -85,7 +94,26 @@ func DrawHand(renderer *sdl.Renderer, handSize int) {
 			vx = append(vx, int16(centerX+_hexRadius*math.Cos(angle)))
 			vy = append(vy, int16(centerY+_hexRadius*math.Sin(angle)))
 		}
+
 		gfx.FilledPolygonColor(renderer, vx, vy, sdl.Color{R: 255, G: 255, B: 255, A: 255})
+
+		var color sdl.Color
+		if mouseX != -1 && mouseY != -1 {
+			if pointInsidePolygon(int16(mouseX), int16(mouseY), vx, vy) {
+				if isClicking {
+					color = sdl.Color{R: 0, G: 255, B: 0, A: 255}
+				} else {
+					color = sdl.Color{R: 60, G: 60, B: 60, A: 255}
+				}
+				selectedPiece = i
+			}
+		}
+
+		if selectedHandPiece == i {
+			color = sdl.Color{R: 0, G: 255, B: 0, A: 255}
+		}
+
+		gfx.PolygonColor(renderer, vx, vy, color)
 
 		// Load the bee image
 		imageSurface, _ := img.Load(beeImagePath)
@@ -114,6 +142,30 @@ func DrawHand(renderer *sdl.Renderer, handSize int) {
 		defer beeTexture.Destroy()
 		renderer.Copy(beeTexture, nil, &dst)
 	}
+	return selectedPiece
+}
+
+func DrawBoard() {
+
+}
+
+func pointInsidePolygon(x, y int16, verticesX, verticesY []int16) bool {
+	numVertices := len(verticesX)
+	if numVertices != len(verticesY) || numVertices < 3 {
+		return false
+	}
+
+	intersections := 0
+	for i := 0; i < numVertices; i++ {
+		x1, y1 := verticesX[i], verticesY[i]
+		x2, y2 := verticesX[(i+1)%numVertices], verticesY[(i+1)%numVertices]
+
+		if ((y1 > y) != (y2 > y)) && (x < (x2-x1)*(y-y1)/(y2-y1)+x1) {
+			intersections++
+		}
+	}
+
+	return intersections%2 == 1
 }
 
 func main() {
@@ -126,14 +178,93 @@ func main() {
 	renderer, _ := sdl.CreateRenderer(window, -1, sdl.RENDERER_ACCELERATED)
 	defer renderer.Destroy()
 
-	renderer.SetDrawColor(128, 128, 128, 255) // Set to gray color
-	renderer.Clear()                          // Fill the entire screen with gray color
+	// Объявите переменные для отслеживания состояния клика и перетаскивания
+	var isClicking bool
+	var isDragging bool
+	var startX, startY int
+	var hoverX, hoverY int
+	draggingDeactivate := false
+	threshold := 3.0
 
-	drawHexagonAndBee(renderer, 0, 0)
-	drawHexagonAndBee(renderer, 0, 2)
+	// Основной цикл событий
+	for {
+		// Обработка событий
+		for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
+			switch t := event.(type) {
+			case *sdl.QuitEvent:
+				// Обработка выхода из приложения (по крестику)
+				return
+			case *sdl.MouseButtonEvent:
+				if t.Button == sdl.BUTTON_LEFT {
+					if t.State == sdl.PRESSED {
+						// Обработка начала клика
+						isClicking = true
+						startX, startY = int(t.X), int(t.Y)
+					} else if t.State == sdl.RELEASED {
+						// Обработка окончания клика
+						isClicking = false
 
-	DrawHand(renderer, 5)
+						if isDragging {
+							// Завершение перетаскивания
+							isDragging = false
+							draggingDeactivate = false
+							print("endDragging")
+						} else {
+							// Обработка обычного клика
+							draggingDeactivate = false
+							print(t.X, " ", t.Y, "\n")
+						}
+					}
+				}
+			case *sdl.MouseMotionEvent:
+				if isClicking {
+					// Обработка движения мыши во время клика (перетаскивание)
+					if !isDragging {
+						// Проверьте, началось ли перетаскивание (например, с определенным порогом смещения)
+						deltaX := int(t.X) - startX
+						deltaY := int(t.Y) - startY
+						if math.Abs(float64(deltaX)) > threshold || math.Abs(float64(deltaY)) > threshold {
+							isDragging = true
+							// Дополнительные действия при начале перетаскивания
+							print("isDragging")
+							startShiftX = shiftX
+							startShiftY = shiftY
+						}
+					}
 
-	renderer.Present()
-	sdl.Delay(15000) // Wait for 5 seconds to view the result
+					if isDragging && !draggingDeactivate {
+						// Дополнительные действия во время перетаскивания
+						shiftX = float64(int(t.X) + int(startShiftX) - startX)
+						shiftY = float64(int(t.Y) + int(startShiftY) - startY)
+					}
+				} else {
+					hoverX = int(t.X)
+					hoverY = int(t.Y)
+					// print(t.X, " ", t.Y, "\n")
+				}
+			}
+		}
+
+		// Очистка экрана и отрисовка объектов
+		renderer.SetDrawColor(128, 128, 128, 255)
+		renderer.Clear()
+
+		drawHexagonAndBee(renderer, 0, 0)
+		drawHexagonAndBee(renderer, 0, 2)
+
+		if !isClicking {
+			DrawHand(renderer, 5, hoverX, hoverY, isClicking)
+		} else {
+			if selectedPiece := DrawHand(renderer, 5, startX, startY, isClicking); selectedPiece != -1 {
+				selectedHandPiece = selectedPiece
+				draggingDeactivate = true
+			}
+		}
+
+		// Отображение результата на экране
+		renderer.Present()
+
+		// Задержка
+		sdl.Delay(16) // Примерно 60 кадров в секунду
+	}
 }
