@@ -63,7 +63,7 @@ func (s *Server) StartGame(ctx context.Context, game *api.Game) error {
 			case <-ctx.Done():
 				return nil
 			default:
-				err = s.api.SendStatusUpdate(players[(i+1)%2], su)
+				err = s.api.SendStatusUpdate(players[i], su)
 				if err != nil {
 					s.log.Error("Ошибка при отправке статуса игроку", zap.Error(err))
 					return err
@@ -85,8 +85,8 @@ func (s *Server) StartGame(ctx context.Context, game *api.Game) error {
 					s.log.Error("Ошибка при получении хода от игрока", zap.Error(err))
 					return err
 				}
-
-				su = s.UpdateGameState(move.Move)
+				// TODO: here server can receive move from different game of same player
+				su = s.UpdateGameState(game, move.Move)
 				su.GameID = move.GameID
 			}
 		}
@@ -94,6 +94,26 @@ func (s *Server) StartGame(ctx context.Context, game *api.Game) error {
 	return nil
 }
 
-func (s *Server) UpdateGameState(move *game.Move) *api.StatusUpdate {
-	return &api.StatusUpdate{}
+func (s *Server) UpdateGameState(game *api.Game, move *game.Move) (su *api.StatusUpdate) {
+	// TODO: Check if move correct
+	if !move.Piece.Placed {
+		if game.Session.WhiteToMove() {
+			if (*game.Session.GetWhiteHand())[move.Piece.Type] > 0 {
+				piece := move.Piece
+				piece.Placed = true
+				game.Session.GetBoard().Pieces = append(game.Session.GetBoard().Pieces, *move.Piece)
+			}
+		}
+	}
+	su = &api.StatusUpdate{GameState: &api.GameState{}}
+	su.GameState.Board = game.Session.GetBoard()
+	if game.Session.WhiteToMove() {
+		su.GameState.Hand = game.Session.GetWhiteHand()
+		su.GameState.OpponentHand = game.Session.GetWhiteHand()
+	} else {
+		su.GameState.Hand = game.Session.GetWhiteHand()
+		su.GameState.OpponentHand = game.Session.GetWhiteHand()
+	}
+
+	return su
 }

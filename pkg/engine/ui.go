@@ -24,6 +24,7 @@ const (
 	fontPath               = "../assets/NotoSans-Regular.ttf"
 )
 
+// TODO: remove this
 var (
 	startShiftX       = 0.0
 	startShiftY       = 0.0
@@ -41,9 +42,11 @@ type UserEngine struct {
 	board             *game.Board
 	hand              *game.Hand
 	opponentHand      *game.Hand
+	color             game.PieceColor
 	insectImgPathes   map[game.PieceType]string
 	insectImgSurfaces map[game.PieceType]*sdl.Surface
 	insectColor       map[game.PieceType]sdl.Color
+	pieceTypes        []game.PieceType
 	handFont          *ttf.Font
 }
 
@@ -80,6 +83,12 @@ func loadFont(fontPath string, fontSize int) (*ttf.Font, error) {
 }
 
 func (ue *UserEngine) Init() {
+	if len(ue.board.Pieces) == 0 {
+		ue.color = game.White
+	} else {
+		ue.color = game.Black
+	}
+
 	window, err := sdl.CreateWindow(ue.title, sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED,
 		int32(windowWidth), int32(windowHeight), sdl.WINDOW_SHOWN)
 	if err != nil {
@@ -137,11 +146,11 @@ func (ue *UserEngine) Destroy() {
 	ttf.Quit()
 }
 
-func (ue *UserEngine) DrawBoard(drawPossibleMoves bool) {
+func (ue *UserEngine) DrawBoard(drawPossibleMoves bool, mouseX, mouseY int, isClicking bool) (selectedPosition *game.Position) {
 	_hexRadius := hexBoardRadius * imageResizeCoefficient
 
 	for _, piece := range ue.board.Pieces {
-		centerX := windowWidth/2 + float64(piece.Position.X-piece.Position.Y)*_hexRadius*1.5 + shiftX
+		centerX := windowWidth/2 + float64(piece.Position.X-piece.Position.Y)*_hexRadius + shiftX
 		centerY := windowHeight/2 + float64(piece.Position.X+piece.Position.Y)*_hexRadius*math.Sqrt(3)/2 + shiftY
 
 		// Draw hexagon
@@ -159,6 +168,38 @@ func (ue *UserEngine) DrawBoard(drawPossibleMoves bool) {
 		defer beeTexture.Destroy()
 		ue.render.Copy(beeTexture, nil, &dst)
 	}
+
+	if drawPossibleMoves {
+		possibleMoves := []game.Position{}
+
+		if len(ue.board.Pieces) == 0 {
+			possibleMoves = append(possibleMoves, game.Position{X: 0, Y: 0})
+		}
+
+		for _, position := range possibleMoves {
+			centerX := windowWidth/2 + float64(position.X-position.Y)*_hexRadius + shiftX
+			centerY := windowHeight/2 + float64(position.X+position.Y)*_hexRadius*math.Sqrt(3)/2 + shiftY
+
+			var vx, vy []int16
+			for j := 0; j < 6; j++ {
+				angle := float64(j) * 2.0 * math.Pi / 6
+				vx = append(vx, int16(centerX+_hexRadius*math.Cos(angle)))
+				vy = append(vy, int16(centerY+_hexRadius*math.Sin(angle)))
+			}
+
+			color := ue.insectColor[ue.pieceTypes[selectedHandPiece]]
+			color.A = 128
+			if ue.pointInsidePolygon(int16(mouseX), int16(mouseY), vx, vy) {
+				color.A = 255
+				selectedPosition = &game.Position{X: position.X, Y: position.Y}
+			}
+			for j := 0; j < 5; j++ {
+				gfx.ThickLineColor(ue.render, int32(vx[j]), int32(vy[j]), int32(vx[j+1]), int32(vy[j+1]), 2, color)
+			}
+			gfx.ThickLineColor(ue.render, int32(vx[0]), int32(vy[0]), int32(vx[5]), int32(vy[5]), 2, color)
+		}
+	}
+	return selectedPosition
 }
 
 func (ue *UserEngine) drawText(text string, x, y int, color sdl.Color) {
@@ -188,9 +229,7 @@ func (ue *UserEngine) DrawHand(mouseX, mouseY int, isClicking bool) (selectedPie
 	// The y-coordinate will be fixed, and will place the hand at the bottom of the screen
 	y := windowHeight - int(_hexRadius)
 
-	pieceTypes := []game.PieceType{game.QueenBee, game.Spider, game.Beetle, game.Grasshopper, game.SoldierAnt}
-
-	for i, pieceType := range pieceTypes {
+	for i, pieceType := range ue.pieceTypes {
 		x := int(startX + float64(i)*(2*_hexRadius))
 
 		centerX := float64(x)
@@ -206,14 +245,14 @@ func (ue *UserEngine) DrawHand(mouseX, mouseY int, isClicking bool) (selectedPie
 
 		gfx.FilledPolygonColor(ue.render, vx, vy, sdl.Color{R: 255, G: 255, B: 240, A: 255})
 
-		var color sdl.Color = ue.insectColor[pieceTypes[i]]
+		var color sdl.Color = ue.insectColor[ue.pieceTypes[i]]
 		color.A = 0
 		if mouseX != -1 && mouseY != -1 {
-			if pointInsidePolygon(int16(mouseX), int16(mouseY), vx, vy) {
+			if ue.pointInsidePolygon(int16(mouseX), int16(mouseY), vx, vy) {
 				if isClicking {
 					color.A = 255
 				} else {
-					color.A = 100
+					color.A = 128
 				}
 				selectedPiece = i
 			}
@@ -239,7 +278,7 @@ func (ue *UserEngine) DrawHand(mouseX, mouseY int, isClicking bool) (selectedPie
 		gfx.FilledCircleColor(ue.render, int32(circleX), int32(circleY), int32(handCircleSize), sdl.Color{R: 220, G: 220, B: 220, A: 200})
 
 		textColor := sdl.Color{R: 60, G: 60, B: 60, A: 255}
-		numberText := strconv.Itoa((*ue.hand)[pieceTypes[i]])
+		numberText := strconv.Itoa((*ue.hand)[ue.pieceTypes[i]])
 		w, h, err := ue.handFont.SizeUTF8(numberText)
 		if err != nil {
 			panic(err)
@@ -261,9 +300,7 @@ func (ue *UserEngine) DrawOpponentHand() {
 	// The y-coordinate will be fixed, and will place the hand at the bottom of the screen
 	y := int(_hexRadius)
 
-	pieceTypes := []game.PieceType{game.QueenBee, game.Spider, game.Beetle, game.Grasshopper, game.SoldierAnt}
-
-	for i, pieceType := range pieceTypes {
+	for i, pieceType := range ue.pieceTypes {
 		x := int(startX + float64(i)*(2*_hexRadius))
 
 		centerX := float64(x)
@@ -291,7 +328,7 @@ func (ue *UserEngine) DrawOpponentHand() {
 		gfx.FilledCircleColor(ue.render, int32(circleX), int32(circleY), int32(handCircleSize), sdl.Color{R: 220, G: 220, B: 220, A: 200})
 
 		textColor := sdl.Color{R: 60, G: 60, B: 60, A: 255}
-		numberText := strconv.Itoa((*ue.hand)[pieceTypes[i]])
+		numberText := strconv.Itoa((*ue.hand)[ue.pieceTypes[i]])
 		w, h, err := ue.handFont.SizeUTF8(numberText)
 		if err != nil {
 			panic(err)
@@ -300,13 +337,20 @@ func (ue *UserEngine) DrawOpponentHand() {
 	}
 }
 
-func (ue *UserEngine) MakeMove(ctx context.Context, board *game.Board, hand, opponentHand *game.Hand) *game.Move {
-	if !ue.init {
-		ue.Init()
-	}
+func (ue *UserEngine) Start(ctx context.Context, board *game.Board, hand, opponentHand *game.Hand, engineResponse chan *game.Move) {
 	ue.board = board
 	ue.hand = hand
 	ue.opponentHand = opponentHand
+
+	if !ue.init {
+		ue.Init()
+	}
+
+	for _, pt := range []game.PieceType{game.QueenBee, game.Spider, game.Beetle, game.Grasshopper, game.SoldierAnt} {
+		if _, ok := (*ue.hand)[pt]; ok {
+			ue.pieceTypes = append(ue.pieceTypes, pt)
+		}
+	}
 
 	// Объявите переменные для отслеживания состояния клика и перетаскивания
 	var isClicking bool
@@ -314,20 +358,21 @@ func (ue *UserEngine) MakeMove(ctx context.Context, board *game.Board, hand, opp
 	var startX, startY int
 	var hoverX, hoverY int
 	draggingDeactivate := false
-	threshold := 3.0
+	threshold := 1.0
+	var selectedPiece *game.Piece
 
 	// Основной цикл событий
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return
 		default:
 			// Обработка событий
 			for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
 				switch t := event.(type) {
 				case *sdl.QuitEvent:
 					// Обработка выхода из приложения (по крестику)
-					return nil
+					return
 				case *sdl.MouseButtonEvent:
 					if t.Button == sdl.BUTTON_LEFT {
 						if t.State == sdl.PRESSED {
@@ -341,14 +386,13 @@ func (ue *UserEngine) MakeMove(ctx context.Context, board *game.Board, hand, opp
 							if isDragging {
 								// Завершение перетаскивания
 								isDragging = false
-								draggingDeactivate = false
 								print("endDragging")
 							} else {
 								// Обработка обычного клика
-								draggingDeactivate = false
 								print(t.X, " ", t.Y, "\n")
 							}
 						}
+						draggingDeactivate = false
 					}
 				case *sdl.MouseMotionEvent:
 					if isClicking {
@@ -365,7 +409,6 @@ func (ue *UserEngine) MakeMove(ctx context.Context, board *game.Board, hand, opp
 								startShiftY = shiftY
 							}
 						}
-
 						if isDragging && !draggingDeactivate {
 							// Дополнительные действия во время перетаскивания
 							shiftX = float64(int(t.X) + int(startShiftX) - startX)
@@ -374,7 +417,6 @@ func (ue *UserEngine) MakeMove(ctx context.Context, board *game.Board, hand, opp
 					} else {
 						hoverX = int(t.X)
 						hoverY = int(t.Y)
-						// print(t.X, " ", t.Y, "\n")
 					}
 				}
 			}
@@ -383,7 +425,7 @@ func (ue *UserEngine) MakeMove(ctx context.Context, board *game.Board, hand, opp
 			ue.render.SetDrawColor(128, 128, 128, 255)
 			ue.render.Clear()
 
-			ue.DrawBoard(false)
+			ue.DrawOpponentHand()
 
 			if !isClicking {
 				ue.DrawHand(hoverX, hoverY, isClicking)
@@ -394,7 +436,17 @@ func (ue *UserEngine) MakeMove(ctx context.Context, board *game.Board, hand, opp
 				}
 			}
 
-			ue.DrawOpponentHand()
+			if !isClicking {
+				ue.DrawBoard(selectedHandPiece != -1, hoverX, hoverY, isClicking)
+			} else {
+				if position := ue.DrawBoard(selectedHandPiece != -1, startX, startY, isClicking); position != nil {
+					draggingDeactivate = true
+					if selectedPiece == nil {
+						movePlayed := &game.Move{Piece: &game.Piece{Type: ue.pieceTypes[selectedHandPiece], Color: ue.color, Placed: false}, Position: position}
+						engineResponse <- movePlayed
+					}
+				}
+			}
 
 			// Отображение результата на экране
 			ue.render.Present()
@@ -405,7 +457,7 @@ func (ue *UserEngine) MakeMove(ctx context.Context, board *game.Board, hand, opp
 	}
 }
 
-func pointInsidePolygon(x, y int16, verticesX, verticesY []int16) bool {
+func (ue *UserEngine) pointInsidePolygon(x, y int16, verticesX, verticesY []int16) bool {
 	numVertices := len(verticesX)
 	if numVertices != len(verticesY) || numVertices < 3 {
 		return false

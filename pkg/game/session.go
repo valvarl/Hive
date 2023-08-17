@@ -27,8 +27,8 @@ func StandardHand() *Hand {
 		QueenBee:    1,
 		Spider:      2,
 		Beetle:      2,
-		Grasshopper: 2,
-		SoldierAnt:  2,
+		Grasshopper: 3,
+		SoldierAnt:  3,
 	}
 }
 
@@ -48,6 +48,6 @@ func (gs *GameSession) GetWhiteHand() *Hand {
 	return gs.white
 }
 
-func (gs *GameSession) GetBalckHand() *Hand {
+func (gs *GameSession) GetBlackHand() *Hand {
 	return gs.black
 }

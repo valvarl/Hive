@@ -27,6 +27,7 @@ type Piece struct {
 	Position Position
 	Type     PieceType
 	Color    PieceColor
+	Placed   bool
 }
 
 type Board struct {
