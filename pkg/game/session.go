@@ -1,6 +1,9 @@
 package game
 
-type Hand map[PieceType]int
+type Hand struct {
+	Pieces map[PieceType]int
+	Color  PieceColor
+}
 
 type GameSession struct {
 	board    *Board
@@ -10,11 +13,11 @@ type GameSession struct {
 	gameOver bool
 }
 
-func NewGameSession(handInit func() *Hand) *GameSession {
+func NewGameSession(handInit func(PieceColor) *Hand) *GameSession {
 	gs := &GameSession{
 		board:    &Board{},
-		white:    handInit(),
-		black:    handInit(),
+		white:    handInit(White),
+		black:    handInit(Black),
 		turn:     0,
 		gameOver: false,
 	}
@@ -22,13 +25,15 @@ func NewGameSession(handInit func() *Hand) *GameSession {
 	return gs
 }
 
-func StandardHand() *Hand {
+func StandardHand(color PieceColor) *Hand {
 	return &Hand{
-		QueenBee:    1,
-		Spider:      2,
-		Beetle:      2,
-		Grasshopper: 3,
-		SoldierAnt:  3,
+		Pieces: map[PieceType]int{
+			QueenBee:    1,
+			Spider:      2,
+			Beetle:      2,
+			Grasshopper: 3,
+			SoldierAnt:  3},
+		Color: color,
 	}
 }
 
@@ -50,4 +55,8 @@ func (gs *GameSession) GetWhiteHand() *Hand {
 
 func (gs *GameSession) GetBlackHand() *Hand {
 	return gs.black
+}
+
+func (gs *GameSession) NextTurn() {
+	gs.turn += 1
 }

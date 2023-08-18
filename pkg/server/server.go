@@ -53,7 +53,7 @@ func (s *Server) StartGame(ctx context.Context, game *api.Game) error {
 	players := []*api.Player{fp, sp}
 	su := &api.StatusUpdate{
 		GameID:       game.ID,
-		GameState:    &api.GameState{Board: game.Session.GetBoard(), Hand: game.Session.GetWhiteHand(), OpponentHand: game.Session.GetWhiteHand()},
+		GameState:    &api.GameState{Board: game.Session.GetBoard(), Hand: game.Session.GetWhiteHand(), OpponentHand: game.Session.GetBlackHand()},
 		GameFailed:   nil,
 		GameFinished: nil,
 	}
@@ -86,34 +86,62 @@ func (s *Server) StartGame(ctx context.Context, game *api.Game) error {
 					return err
 				}
 				// TODO: here server can receive move from different game of same player
-				su = s.UpdateGameState(game, move.Move)
+				su, _ = s.UpdateGameState(game, move.Move)
 				su.GameID = move.GameID
+				game.Session.NextTurn()
 			}
 		}
 	}
 	return nil
 }
 
-func (s *Server) UpdateGameState(game *api.Game, move *game.Move) (su *api.StatusUpdate) {
-	// TODO: Check if move correct
+func (s *Server) UpdateGameState(g *api.Game, move *game.Move) (*api.StatusUpdate, error) {
+	// TODO: Check if move correct'
+	var su *api.StatusUpdate
 	if !move.Piece.Placed {
-		if game.Session.WhiteToMove() {
-			if (*game.Session.GetWhiteHand())[move.Piece.Type] > 0 {
-				piece := move.Piece
-				piece.Placed = true
-				game.Session.GetBoard().Pieces = append(game.Session.GetBoard().Pieces, *move.Piece)
+		color := game.White
+		if !g.Session.WhiteToMove() {
+			color = game.Black
+		}
+
+		availablePositions := game.AvailableToPlace(g.Session.GetBoard(), color)
+		positionLegal := false
+
+		for _, position := range availablePositions {
+			if move.Position.X == position.X && move.Position.Y == position.Y {
+				positionLegal = true
+				break
+			}
+		}
+
+		if positionLegal {
+			if g.Session.WhiteToMove() {
+				if g.Session.GetWhiteHand().Pieces[move.Piece.Type] > 0 {
+					piece := move.Piece
+					piece.Placed = true
+					piece.Position = *move.Position
+					g.Session.GetBoard().Pieces = append(g.Session.GetBoard().Pieces, *move.Piece)
+					g.Session.GetWhiteHand().Pieces[move.Piece.Type] -= 1
+				}
+			} else {
+				if g.Session.GetBlackHand().Pieces[move.Piece.Type] > 0 {
+					piece := move.Piece
+					piece.Placed = true
+					piece.Position = *move.Position
+					g.Session.GetBoard().Pieces = append(g.Session.GetBoard().Pieces, *move.Piece)
+					g.Session.GetBlackHand().Pieces[move.Piece.Type] -= 1
+				}
 			}
 		}
 	}
 	su = &api.StatusUpdate{GameState: &api.GameState{}}
-	su.GameState.Board = game.Session.GetBoard()
-	if game.Session.WhiteToMove() {
-		su.GameState.Hand = game.Session.GetWhiteHand()
-		su.GameState.OpponentHand = game.Session.GetWhiteHand()
+	su.GameState.Board = g.Session.GetBoard()
+	if g.Session.WhiteToMove() {
+		su.GameState.Hand = g.Session.GetBlackHand()
+		su.GameState.OpponentHand = g.Session.GetWhiteHand()
 	} else {
-		su.GameState.Hand = game.Session.GetWhiteHand()
-		su.GameState.OpponentHand = game.Session.GetWhiteHand()
+		su.GameState.Hand = g.Session.GetWhiteHand()
+		su.GameState.OpponentHand = g.Session.GetBlackHand()
 	}
-
-	return su
+	return su, nil
 }

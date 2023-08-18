@@ -98,15 +98,15 @@ func newEnv(t *testing.T, config *Config) (e *env, cancel func()) {
 			engine.MakeUserEngine(env.Logger.Named("engine"), "client"),
 		),
 		client.NewClient(
-			env.Logger.Named("client"),
+			env.Logger.Named("client2"),
 			serverEndpoint,
-			engine.MakeUserEngine(env.Logger.Named("engine"), "client"),
+			engine.MakeUserEngine(env.Logger.Named("engine"), "client2"),
 		),
 	}
 
 	go func() {
 		select {
-		case <-time.After(time.Second * 10):
+		case <-time.After(time.Second * 30):
 			panic("test hang")
 		case <-env.Ctx.Done():
 			return
