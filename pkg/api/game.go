@@ -34,6 +34,7 @@ type GameState struct {
 	Board        *game.Board
 	Hand         *game.Hand
 	OpponentHand *game.Hand
+	Turn         int
 }
 
 type ClientServise interface {

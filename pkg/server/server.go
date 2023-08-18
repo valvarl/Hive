@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hive/pkg/api"
 	"hive/pkg/game"
@@ -89,6 +90,7 @@ func (s *Server) StartGame(ctx context.Context, game *api.Game) error {
 				su, _ = s.UpdateGameState(game, move.Move)
 				su.GameID = move.GameID
 				game.Session.NextTurn()
+				su.GameState.Turn = game.Session.GetTurn()
 			}
 		}
 	}
@@ -115,22 +117,26 @@ func (s *Server) UpdateGameState(g *api.Game, move *game.Move) (*api.StatusUpdat
 		}
 
 		if positionLegal {
+			var hand *game.Hand
 			if g.Session.WhiteToMove() {
-				if g.Session.GetWhiteHand().Pieces[move.Piece.Type] > 0 {
-					piece := move.Piece
-					piece.Placed = true
-					piece.Position = *move.Position
-					g.Session.GetBoard().Pieces = append(g.Session.GetBoard().Pieces, *move.Piece)
-					g.Session.GetWhiteHand().Pieces[move.Piece.Type] -= 1
-				}
+				hand = g.Session.GetWhiteHand()
 			} else {
-				if g.Session.GetBlackHand().Pieces[move.Piece.Type] > 0 {
-					piece := move.Piece
-					piece.Placed = true
-					piece.Position = *move.Position
-					g.Session.GetBoard().Pieces = append(g.Session.GetBoard().Pieces, *move.Piece)
-					g.Session.GetBlackHand().Pieces[move.Piece.Type] -= 1
+				hand = g.Session.GetBlackHand()
+			}
+
+			if hand.Pieces[move.Piece.Type] > 0 {
+				if g.Session.GetTurn() >= 6 && hand.Pieces[game.QueenBee] != 0 {
+					if move.Piece.Type != game.QueenBee {
+						return nil, errors.New("королеву улья нужно разместить за 4 хода")
+					}
 				}
+				piece := move.Piece
+				piece.Placed = true
+				piece.Position = *move.Position
+				g.Session.GetBoard().Pieces = append(g.Session.GetBoard().Pieces, *move.Piece)
+				hand.Pieces[move.Piece.Type] -= 1
+			} else {
+				return nil, fmt.Errorf("недостаточно насекомых типа %T", move.Piece.Type)
 			}
 		}
 	}

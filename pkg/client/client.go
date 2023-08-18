@@ -19,7 +19,7 @@ type Client struct {
 
 type Engine interface {
 	Start(ctx context.Context, board *game.Board, hand, opponentHand *game.Hand, engineResponse chan *game.Move)
-	Update(board *game.Board, hand, opponentHand *game.Hand)
+	Update(board *game.Board, hand, opponentHand *game.Hand, turn int)
 }
 
 func NewClient(l *zap.Logger, apiEndpoint string, engine Engine) *Client {
@@ -63,7 +63,7 @@ func (c *Client) HandleStatusUpdate(ctx context.Context, su *api.StatusUpdate) e
 		}()
 		c.engineStarted = true
 	} else {
-		c.engine.Update(su.GameState.Board, su.GameState.Hand, su.GameState.OpponentHand)
+		c.engine.Update(su.GameState.Board, su.GameState.Hand, su.GameState.OpponentHand, su.GameState.Turn)
 	}
 	// ctx, _ = context.WithTimeout(ctx, 30*time.Second)
 

@@ -42,6 +42,7 @@ type UserEngine struct {
 	pieceTypes        []game.PieceType
 	handFont          *ttf.Font
 	renderMu          sync.Mutex
+	turn              int
 	selectedHandPiece int
 	selectedPiece     *game.Piece
 }
@@ -245,26 +246,31 @@ func (ue *UserEngine) DrawHand(mouseX, mouseY int, isClicking bool) (selectedPie
 		}
 		gfx.FilledPolygonColor(ue.render, vx, vy, pieceColor)
 
-		var color sdl.Color = ue.insectColor[ue.pieceTypes[i]]
-		color.A = 0
-		if mouseX != -1 && mouseY != -1 {
-			if ue.pointInsidePolygon(int16(mouseX), int16(mouseY), vx, vy) {
-				if isClicking {
-					color.A = 255
-				} else {
-					color.A = 128
-				}
-				selectedPiece = i
-			}
-		}
+		placeQueen := ue.turn >= 6 && ue.hand.Pieces[game.QueenBee] != 0
 
-		if ue.selectedHandPiece == i {
-			color.A = 255
+		if placeQueen && ue.pieceTypes[i] == game.QueenBee || !placeQueen && ue.hand.Pieces[ue.pieceTypes[i]] > 0 {
+			var color sdl.Color = ue.insectColor[ue.pieceTypes[i]]
+			color.A = 0
+			if mouseX != -1 && mouseY != -1 {
+				if ue.pointInsidePolygon(int16(mouseX), int16(mouseY), vx, vy) {
+					if isClicking {
+						color.A = 255
+					} else {
+						color.A = 128
+					}
+					selectedPiece = i
+				}
+			}
+
+			if ue.selectedHandPiece == i {
+				color.A = 255
+			}
+
+			for j := 0; j < 5; j++ {
+				gfx.ThickLineColor(ue.render, int32(vx[j]), int32(vy[j]), int32(vx[j+1]), int32(vy[j+1]), 2, color)
+			}
+			gfx.ThickLineColor(ue.render, int32(vx[0]), int32(vy[0]), int32(vx[5]), int32(vy[5]), 2, color)
 		}
-		for j := 0; j < 5; j++ {
-			gfx.ThickLineColor(ue.render, int32(vx[j]), int32(vy[j]), int32(vx[j+1]), int32(vy[j+1]), 2, color)
-		}
-		gfx.ThickLineColor(ue.render, int32(vx[0]), int32(vy[0]), int32(vx[5]), int32(vy[5]), 2, color)
 
 		// Draw insect
 		dst := sdl.Rect{X: int32(centerX - hexHandRadius), Y: int32(centerY - hexHandRadius), W: 2 * int32(hexHandRadius), H: 2 * int32(hexHandRadius)}
@@ -493,11 +499,12 @@ func (ue *UserEngine) Start(ctx context.Context, board *game.Board, hand, oppone
 	}
 }
 
-func (ue *UserEngine) Update(board *game.Board, hand, opponentHand *game.Hand) {
+func (ue *UserEngine) Update(board *game.Board, hand, opponentHand *game.Hand, turn int) {
 	ue.renderMu.Lock()
 	ue.board = board
 	ue.hand = hand
 	ue.opponentHand = opponentHand
+	ue.turn = turn
 	ue.selectedHandPiece = -1
 	ue.selectedPiece = nil
 	ue.active = true

@@ -60,3 +60,7 @@ func (gs *GameSession) GetBlackHand() *Hand {
 func (gs *GameSession) NextTurn() {
 	gs.turn += 1
 }
+
+func (gs *GameSession) GetTurn() int {
+	return gs.turn
+}
