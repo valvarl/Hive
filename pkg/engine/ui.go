@@ -139,7 +139,7 @@ func (ue *UserEngine) Destroy() {
 	ttf.Quit()
 }
 
-func (ue *UserEngine) DrawBoard(mouseX, mouseY int, isClicking bool, shiftX, shiftY float64) (selectedPosition *game.Position) {
+func (ue *UserEngine) DrawBoard(mouseX, mouseY int, isClicking bool, shiftX, shiftY float64) (selectedPosition *game.Position, selectEmptyRoom bool) {
 	_hexRadius := hexBoardRadius * imageResizeCoefficient
 
 	for _, piece := range ue.board.Pieces {
@@ -161,6 +161,18 @@ func (ue *UserEngine) DrawBoard(mouseX, mouseY int, isClicking bool, shiftX, shi
 		}
 		gfx.FilledPolygonColor(ue.render, vx, vy, pieceColor)
 
+		placeQueen := ue.turn >= 6 && ue.hand.Pieces[game.QueenBee] != 0
+
+		if !placeQueen && mouseX != -1 && mouseY != -1 && piece.Color == ue.color {
+			if ue.pointInsidePolygon(int16(mouseX), int16(mouseY), vx, vy) {
+				gfx.FilledPolygonColor(ue.render, vx, vy, sdl.Color{R: 60, G: 60, B: 60, A: 20})
+				if isClicking {
+					selectedPosition = &game.Position{X: piece.Position.X, Y: piece.Position.Y}
+					selectEmptyRoom = false
+				}
+			}
+		}
+
 		// Draw insect
 		dst := sdl.Rect{X: int32(centerX - hexBoardRadius), Y: int32(centerY - hexBoardRadius), W: 2 * int32(hexBoardRadius), H: 2 * int32(hexBoardRadius)}
 		beeTexture, _ := ue.render.CreateTextureFromSurface(ue.insectImgSurfaces[piece.Type])
@@ -168,33 +180,42 @@ func (ue *UserEngine) DrawBoard(mouseX, mouseY int, isClicking bool, shiftX, shi
 		ue.render.Copy(beeTexture, nil, &dst)
 	}
 
+	var possibleMoves []game.Position
+	var color sdl.Color
 	if ue.selectedHandPiece != -1 {
-		possibleMoves := game.AvailableToPlace(ue.board, ue.color)
-
-		for _, position := range possibleMoves {
-			centerX := windowWidth/2 + float64(position.X-position.Y)*_hexRadius*1.5 + shiftX
-			centerY := windowHeight/2 + float64(position.X+position.Y)*_hexRadius*math.Sqrt(3)/2 + shiftY
-
-			var vx, vy []int16
-			for j := 0; j < 6; j++ {
-				angle := float64(j) * 2.0 * math.Pi / 6
-				vx = append(vx, int16(centerX+_hexRadius*math.Cos(angle)))
-				vy = append(vy, int16(centerY+_hexRadius*math.Sin(angle)))
-			}
-
-			color := ue.insectColor[ue.pieceTypes[ue.selectedHandPiece]]
-			color.A = 128
-			if ue.pointInsidePolygon(int16(mouseX), int16(mouseY), vx, vy) {
-				color.A = 255
-				selectedPosition = &game.Position{X: position.X, Y: position.Y}
-			}
-			for j := 0; j < 5; j++ {
-				gfx.ThickLineColor(ue.render, int32(vx[j]), int32(vy[j]), int32(vx[j+1]), int32(vy[j+1]), 2, color)
-			}
-			gfx.ThickLineColor(ue.render, int32(vx[0]), int32(vy[0]), int32(vx[5]), int32(vy[5]), 2, color)
-		}
+		possibleMoves = game.AvailableToPlace(ue.board, ue.color)
+		color = ue.insectColor[ue.pieceTypes[ue.selectedHandPiece]]
+	} else if ue.selectedPiece != nil {
+		possibleMoves = game.AvailableToMove(ue.board, ue.selectedPiece)
+		color = ue.insectColor[ue.selectedPiece.Type]
+	} else {
+		return selectedPosition, selectEmptyRoom
 	}
-	return selectedPosition
+
+	for _, position := range possibleMoves {
+		centerX := windowWidth/2 + float64(position.X-position.Y)*_hexRadius*1.5 + shiftX
+		centerY := windowHeight/2 + float64(position.X+position.Y)*_hexRadius*math.Sqrt(3)/2 + shiftY
+
+		var vx, vy []int16
+		for j := 0; j < 6; j++ {
+			angle := float64(j) * 2.0 * math.Pi / 6
+			vx = append(vx, int16(centerX+_hexRadius*math.Cos(angle)))
+			vy = append(vy, int16(centerY+_hexRadius*math.Sin(angle)))
+		}
+
+		color.A = 128
+		if ue.pointInsidePolygon(int16(mouseX), int16(mouseY), vx, vy) {
+			color.A = 255
+			selectedPosition = &game.Position{X: position.X, Y: position.Y}
+			selectEmptyRoom = true
+		}
+		for j := 0; j < 5; j++ {
+			gfx.ThickLineColor(ue.render, int32(vx[j]), int32(vy[j]), int32(vx[j+1]), int32(vy[j+1]), 2, color)
+		}
+		gfx.ThickLineColor(ue.render, int32(vx[0]), int32(vy[0]), int32(vx[5]), int32(vy[5]), 2, color)
+	}
+
+	return selectedPosition, selectEmptyRoom
 }
 
 func (ue *UserEngine) drawText(text string, x, y int, color sdl.Color) {
@@ -255,6 +276,7 @@ func (ue *UserEngine) DrawHand(mouseX, mouseY int, isClicking bool) (selectedPie
 				if ue.pointInsidePolygon(int16(mouseX), int16(mouseY), vx, vy) {
 					if isClicking {
 						color.A = 255
+						ue.selectedPiece = nil
 					} else {
 						color.A = 128
 					}
@@ -456,6 +478,7 @@ func (ue *UserEngine) Start(ctx context.Context, board *game.Board, hand, oppone
 				} else {
 					if selectedPiece := ue.DrawHand(startX, startY, isClicking); selectedPiece != -1 {
 						ue.selectedHandPiece = selectedPiece
+						ue.selectedPiece = nil
 						draggingDeactivate = true
 					}
 				}
@@ -463,18 +486,37 @@ func (ue *UserEngine) Start(ctx context.Context, board *game.Board, hand, oppone
 				if !isClicking {
 					ue.DrawBoard(hoverX, hoverY, isClicking, shiftX, shiftY)
 				} else {
-					if position := ue.DrawBoard(startX, startY, isClicking, shiftX, shiftY); position != nil {
+					position, selectEmptyRoom := ue.DrawBoard(startX, startY, isClicking, shiftX, shiftY)
+
+					if position != nil {
 						draggingDeactivate = true
-						if ue.selectedPiece == nil {
-							piecePlaced := &game.Piece{Position: *position, Type: ue.pieceTypes[ue.selectedHandPiece], Color: ue.color, Placed: false}
-							ue.board.Pieces = append(ue.board.Pieces, *piecePlaced)
-							ue.hand.Pieces[ue.pieceTypes[ue.selectedHandPiece]] -= 1
-							movePlayed := &game.Move{Piece: piecePlaced, Position: position}
-							engineResponse <- movePlayed
+						if selectEmptyRoom {
+							var movePlayed *game.Move
+							if ue.selectedHandPiece != -1 {
+								piecePlaced := &game.Piece{Position: *position, Type: ue.pieceTypes[ue.selectedHandPiece], Color: ue.color, Placed: false}
+								ue.board.Pieces = append(ue.board.Pieces, piecePlaced)
+								ue.hand.Pieces[ue.pieceTypes[ue.selectedHandPiece]] -= 1
+								movePlayed = &game.Move{Piece: piecePlaced, Position: position}
+							} else {
+								piece := &game.Piece{Position: ue.selectedPiece.Position, Type: ue.selectedPiece.Type, Color: ue.selectedPiece.Color, Placed: true}
+								movePlayed = &game.Move{Piece: piece, Position: position}
+								(*ue.selectedPiece).Position = *position
+							}
 							ue.selectedHandPiece = -1
 							ue.selectedPiece = nil
 							ue.active = false
 							draggingDeactivate = false
+							engineResponse <- movePlayed
+						} else {
+							ue.log.Info("Position selected", zap.Any("position", position), zap.Any("deck", ue.board.Pieces))
+
+							for _, p := range ue.board.Pieces {
+								if p.Position.X == position.X && p.Position.Y == position.Y {
+									ue.selectedPiece = p
+									break
+								}
+							}
+							ue.selectedHandPiece = -1
 						}
 					}
 				}
@@ -492,7 +534,7 @@ func (ue *UserEngine) Start(ctx context.Context, board *game.Board, hand, oppone
 				ue.render.Present()
 
 				// Задержка
-				sdl.Delay(128)
+				sdl.Delay(32)
 			}
 			ue.renderMu.Unlock()
 		}

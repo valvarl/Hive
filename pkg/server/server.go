@@ -87,7 +87,10 @@ func (s *Server) StartGame(ctx context.Context, game *api.Game) error {
 					return err
 				}
 				// TODO: here server can receive move from different game of same player
-				su, _ = s.UpdateGameState(game, move.Move)
+				su, err = s.UpdateGameState(game, move.Move)
+				if err != nil {
+					s.log.Error(err.Error())
+				}
 				su.GameID = move.GameID
 				game.Session.NextTurn()
 				su.GameState.Turn = game.Session.GetTurn()
@@ -133,11 +136,45 @@ func (s *Server) UpdateGameState(g *api.Game, move *game.Move) (*api.StatusUpdat
 				piece := move.Piece
 				piece.Placed = true
 				piece.Position = *move.Position
-				g.Session.GetBoard().Pieces = append(g.Session.GetBoard().Pieces, *move.Piece)
+				g.Session.GetBoard().Pieces = append(g.Session.GetBoard().Pieces, move.Piece)
 				hand.Pieces[move.Piece.Type] -= 1
 			} else {
 				return nil, fmt.Errorf("недостаточно насекомых типа %T", move.Piece.Type)
 			}
+		}
+	} else {
+		availablePositions := game.AvailableToMove(g.Session.GetBoard(), move.Piece)
+		positionLegal := false
+		for _, pos := range availablePositions {
+			if move.Position.X == pos.X && move.Position.Y == pos.Y {
+				positionLegal = true
+				break
+			}
+		}
+
+		if positionLegal {
+			var hand *game.Hand
+			if g.Session.WhiteToMove() {
+				hand = g.Session.GetWhiteHand()
+			} else {
+				hand = g.Session.GetBlackHand()
+			}
+
+			if g.Session.GetTurn() >= 6 && hand.Pieces[game.QueenBee] != 0 {
+				return nil, errors.New("королеву улья нужно разместить за 4 хода")
+			}
+
+			s.log.Info("", zap.Any("board", g.Session.GetBoard().Pieces))
+
+			for _, pos := range g.Session.GetBoard().Pieces {
+				if move.Piece.Position.X == pos.Position.X && move.Piece.Position.Y == pos.Position.Y {
+					s.log.Info("HELLO")
+					(*pos).Position = game.Position{X: move.Position.X, Y: move.Position.Y}
+					break
+				}
+			}
+
+			s.log.Info("", zap.Any("board", g.Session.GetBoard().Pieces))
 		}
 	}
 	su = &api.StatusUpdate{GameState: &api.GameState{}}
