@@ -173,14 +173,21 @@ func (s *GameServer) GetPlayer(playerID game.ID) (*Player, error) {
 }
 
 func (s *GameServer) ReceiveMove(player *Player) (*PlayMove, error) {
-	buffer := make([]byte, 1024)
-	n, err := player.conn.Read(buffer)
-	if err != nil {
-		return nil, err
+	var buffer []byte
+	tempBuffer := make([]byte, 1024)
+	for {
+		n, err := player.conn.Read(tempBuffer)
+		if err != nil {
+			return nil, err
+		}
+		buffer = append(buffer, tempBuffer[:n]...)
+		if n < 1024 {
+			break // Прочитаны все данные
+		}
 	}
 
 	var move PlayMove
-	err = json.Unmarshal(buffer[:n], &move)
+	err := json.Unmarshal(buffer, &move)
 	if err != nil {
 		return nil, err
 	}

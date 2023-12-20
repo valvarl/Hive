@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"hive/pkg/game"
 	"net"
-	"time"
 
 	"go.uber.org/zap"
 )
@@ -93,61 +92,25 @@ func (c *GameClient) SendMove(move PlayMove) error {
 }
 
 func (c *GameClient) ReceiveStatusUpdate() (*StatusUpdate, error) {
-	buffer := make([]byte, 1024)
-	<-time.After(time.Second)
-	n, err := c.conn.Read(buffer)
-	if err != nil {
-		return nil, err
+	var buffer []byte
+	tempBuffer := make([]byte, 1024)
+	// <-time.After(time.Second)
+	for {
+		n, err := c.conn.Read(tempBuffer)
+		if err != nil {
+			return nil, err
+		}
+		buffer = append(buffer, tempBuffer[:n]...)
+		if n < 1024 {
+			break // Прочитаны все данные
+		}
 	}
 
 	var su StatusUpdate
-	err = json.Unmarshal(buffer[:n], &su)
+	err := json.Unmarshal(buffer, &su)
 	if err != nil {
 		return nil, err
 	}
 
 	return &su, nil
 }
-
-// func main() {
-// 	logger, err := zap.NewProduction()
-// 	if err != nil {
-// 		log.Fatal("Ошибка при инициализации логгера:", err)
-// 	}
-
-// 	// Создание экземпляра игрока
-// 	player, err := NewPlayerClient(logger, "localhost:8080")
-// 	if err != nil {
-// 		logger.Fatal("Ошибка при создании игрока:", zap.Error(err))
-// 	}
-
-// 	// Подключение к игре
-// 	err = player.Connect()
-// 	if err != nil {
-// 		logger.Fatal("Ошибка при подключении к игре:", zap.Error(err))
-// 	}
-
-// 	// Запуск горутины для приема обновлений от сервера
-// 	go player.ReceiveUpdates()
-
-// 	// Пример отправки хода на сервер
-// 	move := Move{
-// 		Piece: &game.Piece{
-// 			// Задайте поля вашего хода здесь
-// 		},
-// 		Position: &game.Position{
-// 			// Задайте поля вашего хода здесь
-// 		},
-// 	}
-
-// 	err = player.PlayMove(move)
-// 	if err != nil {
-// 		logger.Error("Ошибка при отправке хода:", zap.Error(err))
-// 	}
-
-// 	// Задержка для получения обновлений от сервера
-// 	time.Sleep(5 * time.Second)
-
-// 	// Завершение программы
-// 	logger.Sync()
-// }

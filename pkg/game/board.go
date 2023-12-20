@@ -1,5 +1,7 @@
 package game
 
+import "fmt"
+
 type Position struct {
 	X int
 	Y int
@@ -120,11 +122,13 @@ func AvailableToPlace(board *Board, color PieceColor) []Position {
 	return positions
 }
 
-func CanSqueezeThrough(board *Board, lhs, rhs Position) bool {
+func CanSqueezeThrough(board *Board, lhs, rhs Position, exclude *Position, level int) bool {
 	commonNeighbours := 0
 	for _, piece := range board.Pieces {
-		if IsPositionNeignbour(lhs, piece.Position) && IsPositionNeignbour(rhs, piece.Position) {
-			commonNeighbours += 1
+		if exclude == nil || (piece.Position.X != exclude.X || piece.Position.Y != exclude.Y) {
+			if IsPositionNeignbour(lhs, piece.Position) && IsPositionNeignbour(rhs, piece.Position) && piece.Level >= level {
+				commonNeighbours += 1
+			}
 		}
 	}
 	return commonNeighbours != 2
@@ -186,12 +190,12 @@ func AvailableToMove(board *Board, piece *Piece) []Position {
 		case QueenBee:
 			// fmt.Println("QueenBee")
 			for _, p := range board.Pieces {
-				if p.Position.X != piece.Position.X || p.Position.Y != piece.Position.Y {
+				if IsPositionNeignbour(piece.Position, p.Position) {
 					for i := -1; i <= 1; i++ {
 						for j := -1; j <= 1; j++ {
 							if (i != 0 || j != 0) && i+j != 0 {
 								pos := Position{X: piece.Position.X + i, Y: piece.Position.Y + j}
-								if IsPositionNeignbour(pos, p.Position) && CanSqueezeThrough(board, piece.Position, pos) {
+								if IsPositionNeignbour(pos, p.Position) && CanSqueezeThrough(board, piece.Position, pos, nil, 0) {
 									cellFree := true
 									for _, pp := range board.Pieces {
 										if pp.Position.X == pos.X && pp.Position.Y == pos.Y {
@@ -219,21 +223,31 @@ func AvailableToMove(board *Board, piece *Piece) []Position {
 			*l1 = append(*l1, piece.Position)
 
 			for len(*l1) > 0 {
+				setStep := map[Position]bool{}
 				for _, p := range *l1 {
-					for i := -1; i <= 1; i++ {
-						for j := -1; j <= 1; j++ {
-							if (i != 0 || j != 0) && i+j != 0 {
-								pos := Position{X: p.X + i, Y: p.Y + j}
-								for _, pp := range board.Pieces {
-									if (pp.Position.X != pos.X || pp.Position.Y != pos.Y) &&
-										IsPositionNeignbour(pos, pp.Position) && CanSqueezeThrough(board, p, pos) {
-										if _, ok := set[pos]; !ok {
-											positions = append(positions, pos)
-											*l2 = append(*l2, pos)
-											set[pos] = true
+					for _, pp := range board.Pieces {
+						if pp.Position.X != piece.Position.X || pp.Position.Y != piece.Position.Y {
+							if IsPositionNeignbour(p, pp.Position) {
+								for i := -1; i <= 1; i++ {
+									for j := -1; j <= 1; j++ {
+										if i+j != 0 {
+											pos := Position{X: pp.Position.X + i, Y: pp.Position.Y + j}
+											setStep[pos] = true
 										}
 									}
 								}
+							}
+						}
+					}
+				}
+
+				for _, p := range *l1 {
+					for pp := range setStep {
+						if IsPositionNeignbour(p, pp) && CanSqueezeThrough(board, p, pp, &piece.Position, 0) {
+							if _, ok := set[pp]; !ok {
+								positions = append(positions, pp)
+								*l2 = append(*l2, pp)
+								set[pp] = true
 							}
 						}
 					}
@@ -253,23 +267,39 @@ func AvailableToMove(board *Board, piece *Piece) []Position {
 
 			k := 0
 			for len(*l1) > 0 && k < 3 {
+
+				println("k=", k)
+
+				setStep := map[Position]bool{}
 				for _, p := range *l1 {
-					for i := -1; i <= 1; i++ {
-						for j := -1; j <= 1; j++ {
-							if (i != 0 || j != 0) && i+j != 0 {
-								pos := Position{X: p.X + i, Y: p.Y + j}
-								for _, pp := range board.Pieces {
-									if (pp.Position.X != pos.X || pp.Position.Y != pos.Y) &&
-										IsPositionNeignbour(pos, pp.Position) && CanSqueezeThrough(board, p, pos) {
-										if _, ok := set[pos]; !ok {
-											if k == 2 {
-												positions = append(positions, pos)
-											}
-											*l2 = append(*l2, pos)
-											set[pos] = true
+					for _, pp := range board.Pieces {
+						if pp.Position.X != piece.Position.X || pp.Position.Y != piece.Position.Y {
+							if IsPositionNeignbour(p, pp.Position) {
+								for i := -1; i <= 1; i++ {
+									for j := -1; j <= 1; j++ {
+										if i+j != 0 {
+											pos := Position{X: pp.Position.X + i, Y: pp.Position.Y + j}
+											setStep[pos] = true
 										}
 									}
 								}
+							}
+						}
+					}
+				}
+				for pp := range setStep {
+
+					fmt.Printf("X: %v Y: %v\n", pp.X, pp.Y)
+					for _, p := range *l1 {
+
+						if IsPositionNeignbour(p, pp) && CanSqueezeThrough(board, p, pp, &piece.Position, 0) {
+							if _, ok := set[pp]; !ok {
+								if k == 2 {
+									positions = append(positions, pp)
+								}
+								*l2 = append(*l2, pp)
+								set[pp] = true
+
 							}
 						}
 					}
@@ -300,14 +330,16 @@ func AvailableToMove(board *Board, piece *Piece) []Position {
 			}
 		case Beetle:
 			for _, p := range board.Pieces {
-				if p.Position.X != piece.Position.X || p.Position.Y != piece.Position.Y {
+				if IsPositionNeignbour(piece.Position, p.Position) {
 					for i := -1; i <= 1; i++ {
 						for j := -1; j <= 1; j++ {
-							if (i != 0 || j != 0) && i+j != 0 {
-								pos := Position{X: piece.Position.X + i, Y: piece.Position.Y + j}
-								if IsPositionNeignbour(pos, p.Position) && CanSqueezeThrough(board, piece.Position, pos) {
+							if i+j != 0 {
+								pos := Position{X: p.Position.X + i, Y: p.Position.Y + j}
+								if IsPositionNeignbour(pos, piece.Position) && CanSqueezeThrough(board, piece.Position, pos, nil, piece.Level) {
 									positions = append(positions, pos)
 								}
+							} else if i == 0 && j == 0 {
+								positions = append(positions, p.Position)
 							}
 						}
 					}

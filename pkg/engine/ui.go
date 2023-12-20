@@ -508,7 +508,7 @@ func (ue *UserEngine) Start(ctx context.Context, board *game.Board, hand, oppone
 							draggingDeactivate = false
 							engineResponse <- movePlayed
 						} else {
-							ue.log.Info("Position selected", zap.Any("position", position), zap.Any("deck", ue.board.Pieces))
+							// ue.log.Info("Position selected", zap.Any("position", position), zap.Any("deck", ue.board.Pieces))
 
 							for _, p := range ue.board.Pieces {
 								if p.Position.X == position.X && p.Position.Y == position.Y {
